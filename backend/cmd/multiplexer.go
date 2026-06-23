@@ -46,9 +46,10 @@ const (
 	StateClosed ConnectionState = "closed"
 )
 
+// heartbeatInterval is the interval at which the multiplexer sends heartbeat messages to the cluster connection.
+var heartbeatInterval = 30 * time.Second
+
 const (
-	// HeartbeatInterval is the interval at which the multiplexer sends heartbeat messages to the client.
-	HeartbeatInterval = 30 * time.Second
 	// HandshakeTimeout is the timeout for the handshake with the client.
 	HandshakeTimeout = 45 * time.Second
 	// CleanupRoutineInterval is the interval at which the multiplexer cleans up unused connections.
@@ -91,6 +92,8 @@ type Connection struct {
 	mu sync.RWMutex
 	// writeMu is a mutex to synchronize access to the write operations.
 	writeMu sync.Mutex
+	// clusterWriteMu is a mutex to synchronize writes to the cluster WebSocket connection.
+	clusterWriteMu sync.Mutex
 	// closed is a flag to indicate if the connection is closed.
 	closed bool
 	// usesServiceAccountToken is true when Token was loaded from the
@@ -367,7 +370,9 @@ func (c *Connection) safeClose() {
 		}
 
 		if c.WSConn != nil {
+			c.clusterWriteMu.Lock()
 			_ = c.WSConn.Close()
+			c.clusterWriteMu.Unlock()
 		}
 	})
 }
@@ -553,10 +558,60 @@ func (m *Multiplexer) dialWebSocket(
 	return conn, nil
 }
 
+// calculateBackoffInterval calculates the next reconnect backoff interval.
+func calculateBackoffInterval(consecutiveFailures int, baseInterval, maxInterval time.Duration) time.Duration {
+	if baseInterval <= 0 {
+		return maxInterval
+	}
+
+	if maxInterval > 0 && baseInterval >= maxInterval {
+		return maxInterval
+	}
+
+	if maxInterval <= 0 {
+		return baseInterval
+	}
+
+	if consecutiveFailures <= 0 {
+		return baseInterval
+	}
+
+	if consecutiveFailures >= 62 {
+		return maxInterval
+	}
+
+	factor := time.Duration(1) << uint(consecutiveFailures)
+
+	if factor <= 0 || baseInterval > maxInterval/factor {
+		return maxInterval
+	}
+
+	nextInterval := baseInterval * factor
+
+	if nextInterval <= 0 || nextInterval > maxInterval {
+		return maxInterval
+	}
+
+	return nextInterval
+}
+
+func getHeartbeatInterval() time.Duration {
+	if heartbeatInterval <= 0 {
+		return 30 * time.Second
+	}
+
+	return heartbeatInterval
+}
+
 // monitorConnection monitors the health of a connection and attempts to reconnect if necessary.
 func (m *Multiplexer) monitorConnection(conn *Connection) {
-	heartbeat := time.NewTicker(HeartbeatInterval)
-	defer heartbeat.Stop()
+	currentInterval := getHeartbeatInterval()
+	ticker := time.NewTicker(currentInterval)
+
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+	maxInterval := 10 * time.Minute // Cap backoff at 10 minutes
 
 	for {
 		select {
@@ -564,14 +619,44 @@ func (m *Multiplexer) monitorConnection(conn *Connection) {
 			conn.updateStatus(StateClosed, nil)
 
 			return
-		case <-heartbeat.C:
-			if err := conn.WSConn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				conn.updateStatus(StateError, fmt.Errorf("heartbeat failed: %w", err))
+		case <-ticker.C:
+			conn.mu.RLock()
+			isConnected := conn.Status.State == StateConnected && conn.WSConn != nil
+			conn.mu.RUnlock()
 
-				if newConn, err := m.reconnect(conn); err != nil {
-					logger.Log(logger.LevelError, map[string]string{logFieldClusterID: conn.ClusterID}, err, "reconnecting to cluster")
+			if isConnected {
+				conn.clusterWriteMu.Lock()
+				err := conn.WSConn.WriteMessage(websocket.PingMessage, nil)
+				conn.clusterWriteMu.Unlock()
+
+				if err != nil {
+					conn.updateStatus(StateError, fmt.Errorf("heartbeat failed: %w", err))
+
+					isConnected = false
+				}
+			}
+
+			if !isConnected {
+				newConn, err := m.reconnect(conn)
+				if err != nil {
+					consecutiveFailures++
+					currentInterval = calculateBackoffInterval(consecutiveFailures, getHeartbeatInterval(), maxInterval)
+					ticker.Reset(currentInterval)
+
+					logger.Log(logger.LevelError, map[string]string{
+						logFieldClusterID: conn.ClusterID,
+						"failures":        fmt.Sprintf("%d", consecutiveFailures),
+						"nextRetryIn":     currentInterval.String(),
+					}, err, "reconnecting to cluster")
 				} else {
-					conn = newConn
+					// establishClusterConnection already starts a monitorConnection goroutine for newConn.
+					// Start the message pump for the new connection and exit this monitor to avoid
+					// duplicate monitor goroutines and duplicate ping/reconnect loops.
+					if newConn.Client != nil {
+						go m.handleClusterMessages(newConn, newConn.Client)
+					}
+
+					return
 				}
 			}
 		}
@@ -585,7 +670,9 @@ func (m *Multiplexer) reconnect(conn *Connection) (*Connection, error) {
 	}
 
 	if conn.WSConn != nil {
+		conn.clusterWriteMu.Lock()
 		_ = conn.WSConn.Close()
+		conn.clusterWriteMu.Unlock()
 	}
 
 	newConn, err := m.establishClusterConnection(
@@ -597,8 +684,6 @@ func (m *Multiplexer) reconnect(conn *Connection) (*Connection, error) {
 		conn.Token,
 	)
 	if err != nil {
-		logger.Log(logger.LevelError, map[string]string{logFieldClusterID: conn.ClusterID}, err, "reconnecting to cluster")
-
 		return nil, err
 	}
 
@@ -855,7 +940,10 @@ func (m *Multiplexer) handleConnectionError(clientConn *WSConnLock, msg Message,
 
 // writeMessageToCluster writes a message to the cluster WebSocket connection.
 func (m *Multiplexer) writeMessageToCluster(conn *Connection, data []byte) error {
+	conn.clusterWriteMu.Lock()
 	err := conn.WSConn.WriteMessage(websocket.BinaryMessage, data)
+	conn.clusterWriteMu.Unlock()
+
 	if err != nil {
 		conn.updateStatus(StateError, err)
 		logger.Log(
@@ -1040,8 +1128,11 @@ func (m *Multiplexer) cleanupConnection(conn *Connection) {
 	conn.safeClose()
 
 	m.mutex.Lock()
+
 	connKey := m.createConnectionKey(conn.ClusterID, conn.Path, conn.UserID)
-	delete(m.connections, connKey)
+	if currentConn, exists := m.connections[connKey]; exists && currentConn == conn {
+		delete(m.connections, connKey)
+	}
 	m.mutex.Unlock()
 }
 
