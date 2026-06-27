@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import * as semver from 'semver';
 
 /**
  * Sanitizes a version string by removing any leading 'v' if present.
@@ -15,4 +16,19 @@ export function sanitizeVersion(version: string): string {
     return sanitized;
   }
   return version;
+}
+
+/**
+ * Validates if a version string is a strict semantic version.
+ * Allows standard semver (e.g. 0.24.0) and prerelease versions (e.g. 0.24.0-rc1).
+ *
+ * @param version The version string to validate
+ * @returns True if valid, false otherwise
+ */
+export function isValidVersion(version: string): boolean {
+  const trimmed = version.trim();
+  if (trimmed.startsWith('v')) {
+    return false;
+  }
+  return semver.valid(trimmed) !== null;
 }
