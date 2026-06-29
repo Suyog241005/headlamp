@@ -458,7 +458,7 @@ func TestCleanupConnections(t *testing.T) {
 	conn := createTestConnection("test-cluster", "test-user", "/api/v1/pods", "", clientConn)
 	conn.WSConn = wsConn.conn
 
-	connKey := m.createConnectionKey("test-cluster", "/api/v1/pods", "test-user")
+	connKey := m.createConnectionKey("test-cluster", "/api/v1/pods", "", "test-user")
 	m.connections[connKey] = conn
 
 	m.cleanupConnections()
@@ -479,10 +479,10 @@ func TestCloseConnection(t *testing.T) {
 	conn := createTestConnection("test-cluster-1", "test-user", "/api/v1/pods", "", clientConn)
 	conn.WSConn = wsConn.conn
 
-	connKey := m.createConnectionKey("test-cluster-1", "/api/v1/pods", "test-user")
+	connKey := m.createConnectionKey("test-cluster-1", "/api/v1/pods", "", "test-user")
 	m.connections[connKey] = conn
 
-	m.CloseConnection("test-cluster-1", "/api/v1/pods", "test-user")
+	m.CloseConnection("test-cluster-1", "/api/v1/pods", "", "test-user")
 	assert.Empty(t, m.connections)
 	assert.True(t, conn.closed)
 }
@@ -499,7 +499,7 @@ func TestCloseClientConnectionsClearsClientBeforeClosing(t *testing.T) {
 	conn := createTestConnection("test-cluster", "test-user", "/api/v1/pods", "", clientConn)
 	conn.WSConn = wsConn.conn
 
-	connKey := m.createConnectionKey("test-cluster", "/api/v1/pods", "test-user")
+	connKey := m.createConnectionKey("test-cluster", "/api/v1/pods", "", "test-user")
 	m.connections[connKey] = conn
 
 	m.closeClientConnections(clientConn)
@@ -1411,7 +1411,7 @@ func TestGetOrCreateConnectionDoesNotOverwriteServiceAccountToken(t *testing.T) 
 	)
 	conn.usesServiceAccountToken = true
 
-	connKey := m.createConnectionKey(conn.ClusterID, conn.Path, conn.UserID)
+	connKey := m.createConnectionKey(conn.ClusterID, conn.Path, conn.Query, conn.UserID)
 	m.connections[connKey] = conn
 
 	// No context is stored to match a stateless context that expired while
@@ -1464,7 +1464,7 @@ func TestReconnect_WithToken(t *testing.T) {
 	conn.Status.State = StateError // Simulate an error state
 
 	// Add the connection to the multiplexer's connections map
-	connKey := m.createConnectionKey(conn.ClusterID, conn.Path, conn.UserID)
+	connKey := m.createConnectionKey(conn.ClusterID, conn.Path, conn.Query, conn.UserID)
 	m.connections[connKey] = conn
 
 	// Test reconnection with the same token
@@ -1485,7 +1485,7 @@ func TestReconnect_WithToken(t *testing.T) {
 	newConn.Status.State = StateError
 
 	// Update the connection in the multiplexer's map
-	connKey = m.createConnectionKey(newConn.ClusterID, newConn.Path, newConn.UserID)
+	connKey = m.createConnectionKey(newConn.ClusterID, newConn.Path, newConn.Query, newConn.UserID)
 	m.connections[connKey] = newConn
 
 	// Reconnect with the new token
@@ -1605,7 +1605,7 @@ func TestHandleClusterMessages(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		m.handleClusterMessages(conn, clientConn)
+		m.handleClusterMessages(conn)
 		close(done)
 	}()
 
@@ -1799,5 +1799,103 @@ func TestConcurrentUpdateStatusAndSendDataMessage(t *testing.T) {
 		// Success: no deadlock.
 	case <-time.After(5 * time.Second):
 		t.Fatal("deadlock detected: concurrent updateStatus and sendDataMessage blocked for 5s")
+	}
+}
+
+func TestTerminalReconnectAndBuffering(t *testing.T) {
+	store := kubeconfig.NewContextStore()
+	m := NewMultiplexer(store, false)
+
+	mockServer := createMockKubeAPIServer()
+	defer mockServer.Close()
+
+	err := store.AddContext(&kubeconfig.Context{
+		Name: "test-cluster",
+		Cluster: &api.Cluster{
+			Server:                mockServer.URL,
+			InsecureSkipTLSVerify: true,
+		},
+	})
+	require.NoError(t, err)
+
+	clientConn1, clientServer1 := createTestWebSocketConnection()
+	defer clientServer1.Close()
+
+	msg := Message{
+		ClusterID: "test-cluster",
+		Path:      "/api/v1/namespaces/default/pods/my-pod/exec",
+		Query:     "container=my-container&stdin=true&stdout=true&tty=true",
+		UserID:    "test-user",
+		Type:      "REQUEST",
+	}
+
+	token := "token"
+
+	conn, err := m.getOrCreateConnection(msg, clientConn1, &token)
+	require.NoError(t, err)
+
+	t.Run("Establish initial connection", func(t *testing.T) {
+		assert.NotNil(t, conn)
+		assert.Equal(t, clientConn1, conn.Client)
+		assert.Equal(t, StateConnected, conn.Status.State)
+	})
+
+	t.Run("Simulate disconnect and buffer", func(t *testing.T) {
+		runSimulateDisconnectAndBufferTest(t, conn)
+	})
+
+	t.Run("Reconnect and flush", func(t *testing.T) {
+		runReconnectAndFlushTest(t, m, conn, msg, token)
+	})
+}
+
+func runSimulateDisconnectAndBufferTest(t *testing.T, conn *Connection) {
+	conn.mu.Lock()
+	conn.Client = nil
+	conn.Status.State = StateClosed
+	conn.mu.Unlock()
+
+	err := conn.WSConn.WriteMessage(websocket.TextMessage, []byte("hello"))
+	require.NoError(t, err)
+
+	assert.Eventually(t, func() bool {
+		conn.mu.RLock()
+		defer conn.mu.RUnlock()
+
+		return len(conn.Buffer) == 1 && string(conn.Buffer[0].Data) == "hello"
+	}, 3*time.Second, 10*time.Millisecond)
+}
+
+func runReconnectAndFlushTest(t *testing.T, m *Multiplexer, conn *Connection, msg Message, token string) {
+	clientConn2, clientServer2 := createTestWebSocketConnection()
+	defer clientServer2.Close()
+
+	flushed := make(chan []byte, 1)
+
+	go func() {
+		_, data, err := clientConn2.conn.ReadMessage()
+		if err != nil {
+			return
+		}
+
+		flushed <- data
+	}()
+
+	conn2, err := m.getOrCreateConnection(msg, clientConn2, &token)
+	require.NoError(t, err)
+	assert.Equal(t, conn, conn2)
+	assert.Equal(t, clientConn2, conn.Client)
+	assert.Equal(t, StateConnected, conn.Status.State)
+
+	conn.mu.RLock()
+	isBufferNil := conn.Buffer == nil
+	conn.mu.RUnlock()
+	assert.True(t, isBufferNil)
+
+	select {
+	case data := <-flushed:
+		assert.Contains(t, string(data), "hello")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for buffered messages")
 	}
 }

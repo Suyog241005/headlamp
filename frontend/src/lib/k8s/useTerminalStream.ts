@@ -104,6 +104,8 @@ export function useTerminalStream(options: TerminalStreamOptions) {
   const xtermRef = useRef<XTerminalConnected | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const streamRef = useRef<any | null>(null);
+  const isFirstConnect = useRef(true);
+  const hasSetupTerminal = useRef(false);
   const muiTheme = useTheme();
   const xtermTheme = useMemo(() => getXtermTheme(muiTheme), [muiTheme]);
 
@@ -155,7 +157,12 @@ export function useTerminalStream(options: TerminalStreamOptions) {
 
       // Send resize command to server once connection is established.
       if (!xtermc.connected) {
-        xterm.clear();
+        if (isFirstConnect.current) {
+          xterm.clear();
+          isFirstConnect.current = false;
+        } else {
+          xterm.writeln('\r\n\x1b[32m[Reconnected!]\x1b[0m\r\n');
+        }
         send(Channel.Resize, `{"Width":${xterm.cols},"Height":${xterm.rows}}`);
         // On server error, don't set it as connected
         if (channel !== Channel.ServerError) {
@@ -279,20 +286,84 @@ export function useTerminalStream(options: TerminalStreamOptions) {
 
     fitAddonRef.current = new FitAddon();
     xtermRef.current.xterm.loadAddon(fitAddonRef.current);
+    isFirstConnect.current = true;
+    hasSetupTerminal.current = false;
 
-    (async function () {
-      const { stream, initialMessage } = await connectStream((items: ArrayBuffer) =>
-        onData(xtermRef.current!, items)
-      );
+    let isCancelled = false;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let isReconnecting = false;
 
-      if (initialMessage) {
-        xtermRef.current?.xterm.writeln(initialMessage);
+    async function connect() {
+      if (isCancelled) return;
+
+      try {
+        const { stream, initialMessage } = await connectStream((items: ArrayBuffer) => {
+          if (xtermRef.current) {
+            onData(xtermRef.current, items);
+          }
+        });
+
+        if (isCancelled) {
+          if (stream) stream.cancel();
+          return;
+        }
+
+        if (initialMessage && isFirstConnect.current) {
+          xtermRef.current?.xterm.writeln(initialMessage);
+        }
+
+        if (stream) {
+          const originalCancel = stream.cancel;
+          stream.cancel = () => {
+            isCancelled = true;
+            originalCancel.call(stream);
+          };
+        }
+
+        streamRef.current = stream;
+
+        const socket = stream?.getSocket();
+        if (socket) {
+          const originalOnClose = socket.onclose;
+          socket.onclose = (event: CloseEvent) => {
+            if (originalOnClose) {
+              originalOnClose.call(socket, event);
+            }
+            handleDisconnect();
+          };
+        }
+
+        if (xtermRef.current) {
+          if (!hasSetupTerminal.current && containerRef) {
+            setupTerminal(containerRef, xtermRef.current.xterm, fitAddonRef.current!);
+            hasSetupTerminal.current = true;
+          } else {
+            const xterm = xtermRef.current.xterm;
+            send(Channel.Resize, `{"Width":${xterm.cols},"Height":${xterm.rows}}`);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to connect terminal stream:', err);
+        handleDisconnect();
+      }
+    }
+
+    function handleDisconnect() {
+      if (isCancelled || isReconnecting) return;
+
+      isReconnecting = true;
+      if (xtermRef.current) {
+        xtermRef.current.connected = false;
+        xtermRef.current.xterm.writeln('\r\n\x1b[33m[Connection lost. Reconnecting...]\x1b[0m');
       }
 
-      streamRef.current = stream;
+      reconnectTimeout = setTimeout(() => {
+        isReconnecting = false;
+        connect();
+      }, 3000);
+    }
 
-      setupTerminal(containerRef, xtermRef.current!.xterm, fitAddonRef.current!);
-    })();
+    connect();
 
     const resizeHandler = () => {
       fitAddonRef.current?.fit();
@@ -301,6 +372,10 @@ export function useTerminalStream(options: TerminalStreamOptions) {
     window.addEventListener('resize', resizeHandler);
 
     return function cleanup() {
+      isCancelled = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
       xtermRef.current?.xterm.dispose();
       streamRef.current?.cancel();
       window.removeEventListener('resize', resizeHandler);
