@@ -514,6 +514,49 @@ func TestCloseClientConnectionsClearsClientBeforeClosing(t *testing.T) {
 	assert.True(t, conn.closed)
 }
 
+func TestClusterReaderCleanupKeepsReplacementConnection(t *testing.T) {
+	m := NewMultiplexer(kubeconfig.NewContextStore(), false)
+
+	clientConn, clientServer := createTestWebSocketConnection()
+	defer clientServer.Close()
+
+	clusterConn, clusterServer := createTestWebSocketConn()
+	defer clusterServer.Close()
+
+	connKey := m.createConnectionKey("test-cluster", "/api/v1/pods", "test-user")
+	conn := createTestConnection("test-cluster", "test-user", "/api/v1/pods", "", clientConn)
+	conn.WSConn = clusterConn
+	m.connections[connKey] = conn
+
+	readerDone := make(chan struct{})
+
+	go func() {
+		m.handleClusterMessages(conn, clientConn)
+		close(readerDone)
+	}()
+
+	// A replacement is registered for the same key, then the old connection is closed, as
+	// closeClientConnections does; that wakes the old connection's cluster reader.
+	replacement := createTestConnection("test-cluster", "test-user", "/api/v1/pods", "", clientConn)
+
+	m.mutex.Lock()
+	m.connections[connKey] = replacement
+	m.mutex.Unlock()
+
+	conn.safeClose()
+
+	select {
+	case <-readerDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cluster reader did not stop")
+	}
+
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	assert.Same(t, replacement, m.connections[connKey], "the old reader's cleanup removed the replacement")
+}
+
 func createTestConnection(
 	clusterID,
 	userID,

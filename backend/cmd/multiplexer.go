@@ -1057,13 +1057,17 @@ func (m *Multiplexer) sendDataMessage(
 	return nil
 }
 
-// cleanupConnection performs cleanup for a connection.
+// cleanupConnection closes conn and removes it from the registry. A replacement may have
+// been registered for the same key since, so the entry is only removed if it still is conn.
 func (m *Multiplexer) cleanupConnection(conn *Connection) {
 	conn.safeClose()
 
-	m.mutex.Lock()
 	connKey := m.createConnectionKey(conn.ClusterID, conn.Path, conn.UserID)
-	delete(m.connections, connKey)
+
+	m.mutex.Lock()
+	if m.connections[connKey] == conn {
+		delete(m.connections, connKey)
+	}
 	m.mutex.Unlock()
 }
 
