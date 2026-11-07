@@ -52,6 +52,12 @@ export const WebSocketManager = {
   /** Map to track pending unsubscribe operations for debouncing */
   pendingUnsubscribes: new Map<string, NodeJS.Timeout>(),
 
+  /** Timer of the scheduled automatic reconnect, if any */
+  reconnectTimer: null as ReturnType<typeof setTimeout> | null,
+
+  /** Reconnect attempts since the connection was lost; sets the next delay */
+  reconnectAttempts: 0,
+
   /**
    * Creates a unique key for identifying WebSocket subscriptions
    * @param clusterId - Cluster identifier
@@ -122,6 +128,7 @@ export const WebSocketManager = {
       socket.onopen = () => {
         this.socketMultiplexer = socket;
         this.connecting = false;
+        this.reconnectAttempts = 0;
 
         // Only resubscribe if we're reconnecting after a disconnect
         if (this.isReconnecting) {
@@ -308,6 +315,30 @@ export const WebSocketManager = {
 
     // Only log reconnecting if we have active subscriptions
     this.isReconnecting = this.activeSubscriptions.size > 0;
+
+    // The backend can close the socket, for example when it restarts, so
+    // reconnect on our own instead of waiting for the next subscription.
+    this.scheduleReconnect();
+  },
+
+  /**
+   * Reconnects after a delay while subscriptions are active; the new socket resubscribes
+   * them. The delay starts at 1 second and doubles after each failed attempt, up to 30 seconds.
+   */
+  scheduleReconnect(): void {
+    if (this.reconnectTimer || this.activeSubscriptions.size === 0) {
+      return;
+    }
+
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
+    this.reconnectAttempts++;
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.activeSubscriptions.size > 0) {
+        this.connect().catch(() => this.scheduleReconnect());
+      }
+    }, delay);
   },
 
   /**
