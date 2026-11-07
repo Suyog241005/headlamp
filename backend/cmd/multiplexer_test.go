@@ -514,6 +514,81 @@ func TestCloseClientConnectionsClearsClientBeforeClosing(t *testing.T) {
 	assert.True(t, conn.closed)
 }
 
+func TestCloseClientConnectionsDoesNotBlockOtherClients(t *testing.T) {
+	m := NewMultiplexer(kubeconfig.NewContextStore(), false)
+
+	stalledClient, stalledServer := createTestWebSocketConnection()
+	defer stalledServer.Close()
+
+	closingClient, closingServer := createTestWebSocketConnection()
+	defer closingServer.Close()
+
+	stalledConn := createTestConnection("test-cluster", "user-a", "/api/v1/pods", "", stalledClient)
+	closingConn := createTestConnection("test-cluster", "user-b", "/api/v1/pods", "", closingClient)
+	m.connections[m.createConnectionKey("test-cluster", "/api/v1/pods", "user-a")] = stalledConn
+	m.connections[m.createConnectionKey("test-cluster", "/api/v1/pods", "user-b")] = closingConn
+
+	// A write to a client that stopped reading holds its connection's lock.
+	stalledConn.mu.Lock()
+
+	done := make(chan struct{})
+
+	go func() {
+		m.closeClientConnections(closingClient)
+		close(done)
+	}()
+
+	time.Sleep(100 * time.Millisecond) // let closeClientConnections reach the held lock
+
+	locked := m.mutex.TryLock()
+	if locked {
+		m.mutex.Unlock()
+	}
+
+	assert.True(t, locked, "closeClientConnections holds the multiplexer lock")
+
+	stalledConn.mu.Unlock()
+	<-done
+
+	assert.Len(t, m.connections, 1)
+	assert.Same(t, stalledConn, m.connections[m.createConnectionKey("test-cluster", "/api/v1/pods", "user-a")])
+	assert.True(t, closingConn.IsClosed())
+}
+
+func TestCloseClientConnectionsClosesReplacementConnection(t *testing.T) {
+	m := NewMultiplexer(kubeconfig.NewContextStore(), false)
+
+	clientConn, clientServer := createTestWebSocketConnection()
+	defer clientServer.Close()
+
+	connKey := m.createConnectionKey("test-cluster", "/api/v1/pods", "test-user")
+	conn := createTestConnection("test-cluster", "test-user", "/api/v1/pods", "", clientConn)
+	m.connections[connKey] = conn
+
+	// After the first pass copies the map, a reconnect registers a replacement for the same
+	// client.
+	replacement := createTestConnection("test-cluster", "test-user", "/api/v1/pods", "", clientConn)
+	registered := false
+
+	m.afterClientSnapshot = func() {
+		if registered {
+			return
+		}
+
+		registered = true
+
+		m.mutex.Lock()
+		m.connections[connKey] = replacement
+		m.mutex.Unlock()
+	}
+
+	m.closeClientConnections(clientConn)
+
+	assert.Empty(t, m.connections)
+	assert.True(t, conn.IsClosed())
+	assert.True(t, replacement.IsClosed())
+}
+
 func TestClusterReaderCleanupKeepsReplacementConnection(t *testing.T) {
 	m := NewMultiplexer(kubeconfig.NewContextStore(), false)
 
