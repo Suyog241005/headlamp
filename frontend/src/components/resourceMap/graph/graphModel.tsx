@@ -235,6 +235,7 @@ const DEFAULT_NODE_WEIGHTS = {
   CronJob: 960,
   JobSet: 960,
   LeaderWorkerSet: 960,
+  DisaggregatedSet: 960,
   Job: 920,
 
   // Tier 4: Intermediate Controllers

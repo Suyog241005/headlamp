@@ -45,6 +45,7 @@ export const BUILT_IN_RELATION_IDS = [
   'job-cronjob',
   'job-jobset',
   'statefulset-leaderworkerset',
+  'leaderworkerset-disaggregatedset',
   'gateway-gatewayclass',
   'httproute-gateway',
   'httproute-service',

@@ -33,6 +33,7 @@ import CronJob from '../../../../lib/k8s/cronJob';
 import DaemonSet from '../../../../lib/k8s/daemonSet';
 import Deployment from '../../../../lib/k8s/deployment';
 import DeviceClass from '../../../../lib/k8s/deviceClass';
+import DisaggregatedSet from '../../../../lib/k8s/disaggregatedSet';
 import Endpoints from '../../../../lib/k8s/endpoints';
 import EndpointSlice from '../../../../lib/k8s/endpointSlices';
 import Gateway from '../../../../lib/k8s/gateway';
@@ -254,6 +255,7 @@ export function useGetAllSources(): GraphSource[] {
           makeKubeSource(CronJob),
           makeKubeSource(JobSet),
           makeKubeSource(LeaderWorkerSet),
+          makeKubeSource(DisaggregatedSet),
         ],
       },
       {

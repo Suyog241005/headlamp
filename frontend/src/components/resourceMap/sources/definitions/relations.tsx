@@ -27,6 +27,7 @@ import CronJob from '../../../../lib/k8s/cronJob';
 import DaemonSet from '../../../../lib/k8s/daemonSet';
 import Deployment from '../../../../lib/k8s/deployment';
 import DeviceClass from '../../../../lib/k8s/deviceClass';
+import DisaggregatedSet from '../../../../lib/k8s/disaggregatedSet';
 import Endpoints from '../../../../lib/k8s/endpoints';
 import EndpointSlice from '../../../../lib/k8s/endpointSlices';
 import Gateway from '../../../../lib/k8s/gateway';
@@ -553,6 +554,18 @@ const statefulSetToLeaderWorkerSet = makeRelation(
     statefulSet.metadata.labels?.[LEADER_WORKER_SET_NAME_LABEL] === leaderWorkerSet.metadata.name
 );
 
+// A disaggregated set owns a leader worker set per role and slice, so the chain
+// in the map is DisaggregatedSet -> LWS -> StatefulSet -> Pod.
+const leaderWorkerSetToDisaggregatedSet = makeRelation(
+  'leaderworkerset-disaggregatedset',
+  LeaderWorkerSet,
+  DisaggregatedSet,
+  (leaderWorkerSet, disaggregatedSet) =>
+    leaderWorkerSet.metadata.ownerReferences?.find(
+      owner => owner.uid === disaggregatedSet.metadata.uid
+    )
+);
+
 const gatewayToGatewayClass = makeRelation(
   'gateway-gatewayclass',
   Gateway,
@@ -717,6 +730,7 @@ const staticRelations = [
   jobToCronJob,
   jobToJobSet,
   statefulSetToLeaderWorkerSet,
+  leaderWorkerSetToDisaggregatedSet,
   gatewayToGatewayClass,
   httpRouteToGateway,
   httpRouteToService,

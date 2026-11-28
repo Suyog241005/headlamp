@@ -84,6 +84,9 @@ const kindToIcon: Record<string, React.FC<any>> = {
   // leaderworkerset
   'leaderworkerset.x-k8s.io/LeaderWorkerSet': StsIcon,
 
+  // disaggregatedset
+  'disaggregatedset.x-k8s.io/DisaggregatedSet': StsIcon,
+
   // workload aware scheduling
   'scheduling.k8s.io/Workload': DeployIcon,
   'scheduling.k8s.io/PodGroup': RsIcon,
@@ -121,6 +124,7 @@ const kindGroups = {
     'CronJob',
     'JobSet',
     'LeaderWorkerSet',
+    'DisaggregatedSet',
     'Workload',
     'PodGroup',
     'CompositePodGroup',

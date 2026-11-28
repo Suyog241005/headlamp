@@ -21,6 +21,7 @@ export const supportedKinds = [
   'Job',
   'JobSet',
   'LeaderWorkerSet',
+  'DisaggregatedSet',
   'Service',
   'CronJob',
   'DaemonSet',

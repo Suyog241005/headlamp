@@ -94,6 +94,11 @@ const LeaderWorkerSetWorkloadDetails = lazy(() =>
     default: (props: any) => <WorkloadDetails {...props} workloadKind={m.default} />,
   }))
 );
+const DisaggregatedSetWorkloadDetails = lazy(() =>
+  import('../../../lib/k8s/disaggregatedSet').then(m => ({
+    default: (props: any) => <WorkloadDetails {...props} workloadKind={m.default} />,
+  }))
+);
 
 const kindComponentMap: Record<
   string,
@@ -119,6 +124,11 @@ const kindComponentMap: Record<
   LeaderWorkerSet: props => (
     <Suspense fallback={null}>
       <LeaderWorkerSetWorkloadDetails {...props} />
+    </Suspense>
+  ),
+  DisaggregatedSet: props => (
+    <Suspense fallback={null}>
+      <DisaggregatedSetWorkloadDetails {...props} />
     </Suspense>
   ),
   Service: ServiceDetails,

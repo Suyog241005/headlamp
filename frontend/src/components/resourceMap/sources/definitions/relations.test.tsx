@@ -22,9 +22,11 @@ import CompositePodGroup from '../../../../lib/k8s/compositePodGroup';
 import ConfigMap from '../../../../lib/k8s/configMap';
 import CRD from '../../../../lib/k8s/crd';
 import DeviceClass from '../../../../lib/k8s/deviceClass';
+import DisaggregatedSet from '../../../../lib/k8s/disaggregatedSet';
 import Gateway from '../../../../lib/k8s/gateway';
 import HTTPRoute from '../../../../lib/k8s/httpRoute';
 import { KubeObject, KubeObjectClass } from '../../../../lib/k8s/KubeObject';
+import LeaderWorkerSet from '../../../../lib/k8s/leaderWorkerSet';
 import NetworkPolicy from '../../../../lib/k8s/networkpolicy';
 import PersistentVolumeClaim from '../../../../lib/k8s/persistentVolumeClaim';
 import Pod from '../../../../lib/k8s/pod';
@@ -681,6 +683,39 @@ describe('useGetAllRelations', () => {
     expect(
       relation.predicate(node(serviceAccount('default')), node(statefulSet('namespace-a')))
     ).toBe(true);
+  });
+
+  it('links LeaderWorkerSets to the DisaggregatedSet that owns them', () => {
+    vi.spyOn(CRD, 'useList').mockReturnValue({ items: null } as ReturnType<typeof CRD.useList>);
+    const { result } = renderUseGetAllRelations();
+    const relation = relationById(result.current, 'leaderworkerset-disaggregatedset');
+    const disaggregatedSet = (uid: string) =>
+      new DisaggregatedSet(
+        {
+          metadata: { uid, name: 'inference', namespace: 'namespace-a' },
+          spec: { roles: [] },
+        } as any,
+        'cluster-a'
+      );
+    // Child names carry the slice, a revision hash and the role.
+    const leaderWorkerSet = new LeaderWorkerSet(
+      {
+        metadata: {
+          uid: 'lws',
+          name: 'inference-0-abcd1234-prefill',
+          namespace: 'namespace-a',
+          ownerReferences: [{ kind: 'DisaggregatedSet', name: 'inference', uid: 'ds' }],
+        },
+        spec: {},
+        status: {},
+      } as any,
+      'cluster-a'
+    );
+
+    expect(BUILT_IN_RELATION_IDS).toContain('leaderworkerset-disaggregatedset');
+    expect(relation.predicate(node(leaderWorkerSet), node(disaggregatedSet('ds')))).toBeTruthy();
+    // A set recreated with the same name doesn't own the old one's children.
+    expect(relation.predicate(node(leaderWorkerSet), node(disaggregatedSet('new')))).toBeFalsy();
   });
 
   it('matches and rejects Kubernetes owner references', () => {
