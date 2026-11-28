@@ -16,8 +16,9 @@
 
 import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
+import type DisaggregatedSet from '../../lib/k8s/disaggregatedSet';
 import type Job from '../../lib/k8s/job';
-import { jobExtraInfo } from './extraInfo';
+import { disaggregatedSetExtraInfo, jobExtraInfo } from './extraInfo';
 
 // Passthrough translator: returns the key so rows can be matched by name.
 const t = ((key: string) => key) as TFunction;
@@ -42,5 +43,23 @@ describe('jobExtraInfo duration', () => {
       expect(row?.hide).toBeFalsy();
       expect(row?.value).toBeTruthy();
     }
+  });
+});
+
+describe('disaggregatedSetExtraInfo', () => {
+  it("shows the slices and each role's readiness, with an unknown target as -", () => {
+    const item = {
+      getSlices: () => 2,
+      getRoleReplicas: () => [
+        { name: 'prefill', desired: 4, ready: 3 },
+        { name: 'decode', desired: undefined, ready: 1 },
+      ],
+    } as unknown as DisaggregatedSet;
+
+    expect(disaggregatedSetExtraInfo(item, t)).toEqual([
+      { name: 'translation|Slices', value: 2 },
+      { name: 'translation|Role {{ name }} ready', value: '3/4' },
+      { name: 'translation|Role {{ name }} ready', value: '1/-' },
+    ]);
   });
 });

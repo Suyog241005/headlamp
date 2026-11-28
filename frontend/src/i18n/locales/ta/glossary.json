@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "கொள்ளளவு",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "சப்செட்ஸ்",
   "Endpoint: {{ name }}": "",
   "IP": "ஐபி",

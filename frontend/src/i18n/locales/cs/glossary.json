@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "Kapacita",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "Podskupiny",
   "Endpoint: {{ name }}": "Koncový bod: {{ name }}",
   "IP": "IP adresa",

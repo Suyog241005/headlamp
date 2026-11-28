@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "Kapasite",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "Alt Kümeler",
   "Endpoint: {{ name }}": "Uç nokta: {{ name }}",
   "IP": "IP",

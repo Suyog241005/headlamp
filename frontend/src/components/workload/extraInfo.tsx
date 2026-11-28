@@ -16,6 +16,7 @@
 
 import { TFunction } from 'i18next';
 import Deployment from '../../lib/k8s/deployment';
+import type DisaggregatedSet from '../../lib/k8s/disaggregatedSet';
 import Job from '../../lib/k8s/job';
 import StatefulSet from '../../lib/k8s/statefulSet';
 import { localeDate } from '../../lib/util';
@@ -168,10 +169,31 @@ export function jobExtraInfo(item: Job, t: TFunction): NameValueTableRow[] {
   ];
 }
 
+/**
+ * A disaggregated set only serves with a ready replica of every role, so each
+ * role's readiness is shown on its own, totalled across slices.
+ */
+export function disaggregatedSetExtraInfo(
+  item: DisaggregatedSet,
+  t: TFunction
+): NameValueTableRow[] {
+  return [
+    {
+      name: t('translation|Slices'),
+      value: item.getSlices(),
+    },
+    ...item.getRoleReplicas().map(role => ({
+      name: t('translation|Role {{ name }} ready', { name: role.name }),
+      value: `${role.ready}/${role.desired ?? '-'}`,
+    })),
+  ];
+}
+
 export const KIND_EXTRA_INFO: Partial<
   Record<string, (item: any, t: TFunction) => NameValueTableRow[]>
 > = {
   Deployment: deploymentExtraInfo,
   StatefulSet: statefulSetExtraInfo,
   Job: jobExtraInfo,
+  DisaggregatedSet: disaggregatedSetExtraInfo,
 };

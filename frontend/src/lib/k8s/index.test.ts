@@ -513,6 +513,7 @@ const namespacedClasses = [
   'CronJob',
   'DaemonSet',
   'Deployment',
+  'DisaggregatedSet',
   'Endpoint',
   'Endpoints',
   'EndpointSlice',

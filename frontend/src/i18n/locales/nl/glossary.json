@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "Capaciteit",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "Subgroepen",
   "Endpoint: {{ name }}": "Eindpunt: {{ name }}",
   "IP": "IP",

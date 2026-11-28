@@ -26,6 +26,7 @@ import CronJob from './cronJob';
 import DaemonSet from './daemonSet';
 import Deployment from './deployment';
 import DeviceClass from './deviceClass';
+import DisaggregatedSet from './disaggregatedSet';
 import Endpoints from './endpoints';
 import EndpointSlice from './endpointSlices';
 import Gateway from './gateway';
@@ -103,6 +104,7 @@ export const ResourceClasses = {
   Job,
   JobSet,
   LeaderWorkerSet,
+  DisaggregatedSet,
   Namespace,
   NetworkPolicy,
   Node,

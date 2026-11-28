@@ -329,8 +329,10 @@ export default function WorkloadDetails<T extends WorkloadClass>(props: Workload
           // A leader worker set has neither, keeping its containers under
           // spec.leaderWorkerTemplate, so the section would render as an untitled
           // empty placeholder. The leader and worker containers are already visible
-          // in the owned stateful sets listed above.
-          ...(workloadKind.kind === 'LeaderWorkerSet'
+          // in the owned stateful sets listed above. A disaggregated set keeps a
+          // leader worker template per role, under spec.roles, and its pods are
+          // listed above.
+          ...(['LeaderWorkerSet', 'DisaggregatedSet'].includes(workloadKind.kind)
             ? []
             : [
                 {

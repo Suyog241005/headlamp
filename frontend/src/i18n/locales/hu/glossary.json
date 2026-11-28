@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "Kapacitás",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "Részhalmazok",
   "Endpoint: {{ name }}": "Végpont: {{ name }}",
   "IP": "IP-cím",

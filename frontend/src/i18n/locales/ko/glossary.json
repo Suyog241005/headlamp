@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "용량",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "서브셋",
   "Endpoint: {{ name }}": "",
   "IP": "IP",

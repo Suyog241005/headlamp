@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "السعة",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "المجموعات الفرعية",
   "Endpoint: {{ name }}": "نقطة النهاية: {{ name }}",
   "IP": "عنوان IP",

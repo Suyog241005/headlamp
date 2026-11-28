@@ -79,6 +79,7 @@
   "Resource Claim Templates": "",
   "Capacity": "صلاحیت",
   "Resource Slices": "",
+  "Disaggregated Sets": "",
   "Subsets": "سب سیٹس",
   "Endpoint: {{ name }}": "اینڈپوائنٹ: {{ name }}",
   "IP": "IP",
