@@ -610,6 +610,10 @@
     "deviceClass": {
       "default": [Function],
     },
+    "disaggregatedSet": {
+      "DISAGGREGATED_SET_NAME_LABEL": "disaggregatedset.x-k8s.io/name",
+      "default": [Function],
+    },
     "event": {
       "default": [Function],
       "useEventListForClusters": [Function],

@@ -17,6 +17,7 @@
 import type CronJob from './cronJob';
 import type DaemonSet from './daemonSet';
 import type Deployment from './deployment';
+import type DisaggregatedSet from './disaggregatedSet';
 import type Job from './job';
 import type JobSet from './jobSet';
 import type LeaderWorkerSet from './leaderWorkerSet';
@@ -47,7 +48,8 @@ export type Workload =
   | CronJob
   | Deployment
   | JobSet
-  | LeaderWorkerSet;
+  | LeaderWorkerSet
+  | DisaggregatedSet;
 export type WorkloadClass =
   | typeof Pod
   | typeof DaemonSet
@@ -57,4 +59,5 @@ export type WorkloadClass =
   | typeof CronJob
   | typeof Deployment
   | typeof JobSet
-  | typeof LeaderWorkerSet;
+  | typeof LeaderWorkerSet
+  | typeof DisaggregatedSet;
