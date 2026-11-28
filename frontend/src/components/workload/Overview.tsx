@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import CronJob from '../../lib/k8s/cronJob';
 import DaemonSet from '../../lib/k8s/daemonSet';
 import Deployment from '../../lib/k8s/deployment';
+import DisaggregatedSet from '../../lib/k8s/disaggregatedSet';
 import Job from '../../lib/k8s/job';
 import JobSet from '../../lib/k8s/jobSet';
 import LeaderWorkerSet from '../../lib/k8s/leaderWorkerSet';
@@ -48,6 +49,7 @@ export default function Overview() {
   const [cronJobs] = CronJob.useList();
   const [jobSets] = JobSet.useList();
   const [leaderWorkerSets] = LeaderWorkerSet.useList();
+  const [disaggregatedSets] = DisaggregatedSet.useList();
 
   const workloadsData: WorkloadDict = useMemo(
     () => ({
@@ -60,6 +62,7 @@ export default function Overview() {
       CronJob: cronJobs ?? [],
       JobSet: jobSets ?? [],
       LeaderWorkerSet: leaderWorkerSets ?? [],
+      DisaggregatedSet: disaggregatedSets ?? [],
     }),
     [
       pods,
@@ -71,13 +74,19 @@ export default function Overview() {
       cronJobs,
       jobSets,
       leaderWorkerSets,
+      disaggregatedSets,
     ]
   );
 
   const { t } = useTranslation('glossary');
 
   function getPods(item: Workload) {
-    return `${getReadyReplicas(item)}/${getTotalReplicas(item)}`;
+    // A disaggregated set's target can be unknown, e.g. before its external scaler exists.
+    const total =
+      item.kind === 'DisaggregatedSet'
+        ? (item as DisaggregatedSet).getDesiredReplicas() ?? '-'
+        : getTotalReplicas(item);
+    return `${getReadyReplicas(item)}/${total}`;
   }
 
   function sortByReplicas(w1: Workload, w2: Workload) {
@@ -121,6 +130,7 @@ export default function Overview() {
     CronJob,
     JobSet,
     LeaderWorkerSet,
+    DisaggregatedSet,
   ];
 
   const workloadLabel = {
@@ -133,6 +143,7 @@ export default function Overview() {
     [CronJob.className]: t('glossary|Cron Jobs'),
     [JobSet.className]: t('glossary|Job Sets'),
     [LeaderWorkerSet.className]: t('glossary|Leader Worker Sets'),
+    [DisaggregatedSet.className]: t('glossary|Disaggregated Sets'),
   };
 
   function ChartLink({ workload }: { workload: WorkloadClass }) {
@@ -143,6 +154,7 @@ export default function Overview() {
   // Jobs/CronJobs/JobSets have no replica fields (like Pods). Leader worker sets
   // do have them, but a plain ready/desired comparison can't tell a partially
   // ready group apart from a failed one, nor spot a rollout in progress.
+  // Disaggregated sets report them per role, which are each judged on their own.
   const perItemHealth: Record<
     string,
     ((item: Workload) => ReturnType<Job['getHealth']>) | undefined
@@ -151,6 +163,7 @@ export default function Overview() {
     [CronJob.className]: item => (item as CronJob).getHealth(),
     [JobSet.className]: item => (item as JobSet).getHealth(),
     [LeaderWorkerSet.className]: item => (item as LeaderWorkerSet).getHealth(),
+    [DisaggregatedSet.className]: item => (item as DisaggregatedSet).getHealth(),
   };
 
   return (

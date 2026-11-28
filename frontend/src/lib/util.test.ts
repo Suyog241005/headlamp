@@ -116,6 +116,20 @@ describe('getReadyReplicas / getTotalReplicas', () => {
     expect(getReadyReplicas(daemonSet)).toBe(2);
     expect(getTotalReplicas(daemonSet)).toBe(3);
   });
+
+  it("totals a DisaggregatedSet's roles, which it reports instead of top-level counts", () => {
+    const disaggregatedSet = (desired: number | undefined) =>
+      ({
+        kind: 'DisaggregatedSet',
+        spec: { roles: [] },
+        status: { readyReplicas: 9 },
+        getReadyReplicas: () => 3,
+        getDesiredReplicas: () => desired,
+      } as any);
+    expect(getReadyReplicas(disaggregatedSet(4))).toBe(3);
+    expect(getTotalReplicas(disaggregatedSet(4))).toBe(4);
+    expect(getTotalReplicas(disaggregatedSet(undefined))).toBe(0);
+  });
 });
 
 describe('combineClusterListErrors', () => {

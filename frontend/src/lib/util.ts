@@ -24,6 +24,7 @@ import { selectEffectiveSettings } from '../settings/useAdminSettings';
 import { getCluster, getClusterGroup, getClusterPrefixedPath } from './cluster';
 import type { ApiError } from './k8s/api/v2/ApiError';
 import type { KubeMetrics } from './k8s/cluster';
+import type DisaggregatedSet from './k8s/disaggregatedSet';
 import type { KubeEvent } from './k8s/event';
 import type { KubeObjectInterface } from './k8s/KubeObject';
 import type Node from './k8s/node';
@@ -278,11 +279,22 @@ export function getPercentStr(value: number, total: number) {
   return `${formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted} %`;
 }
 
+// A disaggregated set reports its replicas per role, not at the top of its status.
+function isDisaggregatedSet(item: Workload): item is DisaggregatedSet {
+  return item.kind === 'DisaggregatedSet';
+}
+
 export function getReadyReplicas(item: Workload) {
+  if (isDisaggregatedSet(item)) {
+    return item.getReadyReplicas();
+  }
   return item.status?.readyReplicas || item.status?.numberReady || 0;
 }
 
 export function getTotalReplicas(item: Workload) {
+  if (isDisaggregatedSet(item)) {
+    return item.getDesiredReplicas() ?? 0;
+  }
   return (
     item.spec.replicas ||
     item.status?.desiredNumberScheduled ||

@@ -222,6 +222,14 @@ export default {
               items: [],
             })
           ),
+          http.get(`${API_BASE}/apis/disaggregatedset.x-k8s.io/v1/disaggregatedsets`, () =>
+            HttpResponse.json({
+              kind: 'DisaggregatedSetList',
+              apiVersion: 'disaggregatedset.x-k8s.io/v1',
+              metadata: {},
+              items: [],
+            })
+          ),
         ],
       },
     },
