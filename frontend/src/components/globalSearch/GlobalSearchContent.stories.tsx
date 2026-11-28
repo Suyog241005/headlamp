@@ -141,6 +141,11 @@ const meta: Meta<typeof GlobalSearchContent> = {
             `${sampleClusterApiBase}/apis/leaderworkerset.x-k8s.io/v1/leaderworkersets`,
             () => HttpResponse.json(makeKubeList('leaderworkerset.x-k8s.io/v1', 'LeaderWorkerSet'))
           ),
+          http.get(
+            `${sampleClusterApiBase}/apis/disaggregatedset.x-k8s.io/v1/disaggregatedsets`,
+            () =>
+              HttpResponse.json(makeKubeList('disaggregatedset.x-k8s.io/v1', 'DisaggregatedSet'))
+          ),
         ],
       },
     },
